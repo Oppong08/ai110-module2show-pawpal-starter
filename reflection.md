@@ -96,7 +96,7 @@ classDiagram
     Schedule "1" --> "many" Task : contains
 ```
 
-> To export as `uml_final.png`: paste the Mermaid source above into [mermaid.live](https://mermaid.live), then use the Download PNG button.
+![UML Class Diagram](uml_final.png)
 
 **b. Design changes**
 

@@ -43,7 +43,7 @@ pip install -r requirements.txt
 
 ## 📸 Demo
 
-<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+<a href="Pawpal final.png" target="_blank"><img src='Pawpal final.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
 
 ## Smarter Scheduling
 
