@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
@@ -10,15 +11,46 @@ class Task:
     duration_minutes: int
     priority: str        # "low", "medium", or "high"
     frequency: str       # "daily", "weekly", or "as-needed"
+    time: str = ""       # "HH:MM" scheduled start time; "" means unscheduled
+    due_date: str = ""   # "YYYY-MM-DD" used to compute next occurrence for recurring tasks
+    pet_name: str = ""   # auto-stamped by Pet.add_task(); used for filtering and conflict display
     completed: bool = field(default=False)
 
     def is_feasible(self, available_time: int) -> bool:
-        """Return True if this task fits within the remaining time budget."""
+        """Return True if this task fits within the remaining time budget.
+
+        Args:
+            available_time: Remaining minutes in the owner's daily budget.
+
+        Returns:
+            True if duration_minutes <= available_time, False otherwise.
+        """
         return self.duration_minutes <= available_time
 
-    def mark_complete(self) -> None:
-        """Mark this task as completed by setting completed to True."""
+    def mark_complete(self) -> "Task | None":
+        """Mark this task as completed and auto-generate the next occurrence for recurring tasks.
+
+        Sets completed to True. For "daily" or "weekly" tasks, creates and returns a new
+        Task with the same attributes but completed=False and a due_date advanced by 1 or
+        7 days respectively. For "as-needed" tasks, returns None.
+
+        Returns:
+            A new Task for the next occurrence, or None if this task does not recur.
+        """
         self.completed = True
+        if self.frequency in ("daily", "weekly"):
+            base = date.fromisoformat(self.due_date) if self.due_date else date.today()
+            delta = timedelta(days=1 if self.frequency == "daily" else 7)
+            return Task(
+                title=self.title,
+                duration_minutes=self.duration_minutes,
+                priority=self.priority,
+                frequency=self.frequency,
+                time=self.time,
+                due_date=(base + delta).isoformat(),
+                pet_name=self.pet_name,
+            )
+        return None
 
 
 @dataclass
@@ -29,7 +61,12 @@ class Pet:
     tasks: list = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
-        """Append a task to this pet's task list."""
+        """Append a task to this pet's task list and stamp the task's pet_name.
+
+        Args:
+            task: The Task to add. Its pet_name attribute will be set to this pet's name.
+        """
+        task.pet_name = self.name
         self.tasks.append(task)
 
 
@@ -131,3 +168,60 @@ class Scheduler:
                 )
 
         return Schedule(self.owner, scheduled, explanations)
+
+    def sort_by_time(self, tasks: list) -> list:
+        """Sort a list of tasks chronologically by their scheduled time.
+
+        Tasks without a time value (empty string) sort after all timed tasks.
+
+        Args:
+            tasks: List of Task objects to sort.
+
+        Returns:
+            A new list sorted by time in ascending "HH:MM" order.
+        """
+        return sorted(tasks, key=lambda t: t.time if t.time else "99:99")
+
+    def filter_tasks(self, pet_name: str = None, completed: bool = None) -> list:
+        """Filter the owner's tasks by pet name and/or completion status.
+
+        Both parameters are optional; omitting one means that dimension is not filtered.
+
+        Args:
+            pet_name: If provided, only return tasks belonging to this pet.
+            completed: If True, return only completed tasks. If False, only pending tasks.
+
+        Returns:
+            A list of Task objects matching all supplied filters.
+        """
+        tasks = self.owner.get_all_tasks()
+        if pet_name is not None:
+            tasks = [t for t in tasks if t.pet_name == pet_name]
+        if completed is not None:
+            tasks = [t for t in tasks if t.completed == completed]
+        return tasks
+
+    def detect_conflicts(self) -> list:
+        """Detect tasks scheduled at the exact same time and return warning messages.
+
+        Only tasks with a non-empty time attribute are considered. The check uses exact
+        "HH:MM" string matching; overlapping durations are not detected (see reflection.md
+        section 2b for the tradeoff rationale).
+
+        Returns:
+            A list of human-readable warning strings, one per conflicting pair.
+            Returns an empty list if no conflicts exist.
+        """
+        timed = [t for t in self.owner.get_all_tasks() if t.time]
+        warnings = []
+        seen: dict[str, Task] = {}
+        for task in timed:
+            if task.time in seen:
+                other = seen[task.time]
+                warnings.append(
+                    f"Conflict at {task.time}: '{task.title}' ({task.pet_name}) "
+                    f"clashes with '{other.title}' ({other.pet_name})"
+                )
+            else:
+                seen[task.time] = task
+        return warnings

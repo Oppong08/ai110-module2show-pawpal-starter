@@ -114,8 +114,7 @@ After reviewing the class skeletons, three issues were identified and fixed:
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+The conflict detector checks for exact `HH:MM` string matches only. Two tasks scheduled at "09:00" (30 min) and "09:15" (20 min) would not be flagged even though they overlap in real time. Detecting overlap by duration would require computing each task's end time (`start_time + duration`) and checking intervals for intersection — adding meaningful complexity for a single-owner, low-volume app. Exact-time matching catches the most obvious conflicts (double-booking the same slot) without the extra arithmetic, and a warning message is returned rather than raising an exception, so the app never crashes on a conflict.
 
 ---
 

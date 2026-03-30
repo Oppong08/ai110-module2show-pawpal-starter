@@ -32,6 +32,18 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Smarter Scheduling
+
+Phase 3 adds four algorithmic features that make the scheduler more intelligent:
+
+- **`Scheduler.sort_by_time(tasks)`** — Returns tasks sorted chronologically by their `time` attribute (`"HH:MM"`). Tasks with no time assigned sort to the end. Powered by Python's `sorted()` with a lambda key.
+
+- **`Scheduler.filter_tasks(pet_name, completed)`** — Filters the owner's full task list by pet name, completion status, or both. Useful for showing only a single pet's tasks or only pending work.
+
+- **Recurring task automation** — `Task.mark_complete()` now returns a new `Task` for the next occurrence when `frequency` is `"daily"` (tomorrow) or `"weekly"` (7 days later). The caller adds this task back to the pet's list. Uses Python's `datetime.timedelta` for accurate date arithmetic.
+
+- **`Scheduler.detect_conflicts()`** — Checks all timed tasks for exact `"HH:MM"` collisions. Returns a list of human-readable warning strings (one per conflicting pair) instead of raising an exception, so the app never crashes on a scheduling conflict.
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.
