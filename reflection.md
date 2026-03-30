@@ -40,7 +40,7 @@ The three core actions a user should be able to perform in PawPal+:
   - Attributes: `scheduled_tasks` (ordered list of Task), `total_duration` (int), `explanations` (list of str)
   - Methods: `display()` — formats the plan for the UI
 
-**UML Class Diagram:**
+**UML Class Diagram (final — updated to match implementation):**
 
 ```mermaid
 classDiagram
@@ -48,40 +48,55 @@ classDiagram
         +str title
         +int duration_minutes
         +str priority
+        +str frequency
+        +str time
+        +str due_date
+        +str pet_name
+        +bool completed
         +is_feasible(available_time: int) bool
+        +mark_complete() Task
     }
 
     class Pet {
         +str name
         +str species
+        +list tasks
+        +add_task(task: Task) None
     }
 
     class Owner {
         +str name
-        +Pet pet
         +int available_minutes
+        +list pets
+        +add_pet(pet: Pet) None
+        +get_all_tasks() list
     }
 
     class Scheduler {
         +Owner owner
-        +list~Task~ tasks
         +generate_schedule() Schedule
-        +explain_schedule() list~str~
+        +sort_by_time(tasks: list) list
+        +filter_tasks(pet_name, completed) list
+        +detect_conflicts() list
     }
 
     class Schedule {
-        +list~Task~ scheduled_tasks
-        +int total_duration
-        +list~str~ explanations
+        +Owner owner
+        +list scheduled_tasks
+        +list explanations
+        +total_duration int
         +display() str
     }
 
-    Owner "1" --> "1" Pet : owns
-    Scheduler "1" --> "1" Owner : uses
-    Scheduler "1" --> "many" Task : considers
+    Owner "1" --> "many" Pet : owns
+    Pet "1" --> "many" Task : owns
+    Scheduler "1" --> "1" Owner : reads
     Scheduler "1" --> "1" Schedule : produces
+    Schedule "1" --> "1" Owner : references
     Schedule "1" --> "many" Task : contains
 ```
+
+> To export as `uml_final.png`: paste the Mermaid source above into [mermaid.live](https://mermaid.live), then use the Download PNG button.
 
 **b. Design changes**
 
@@ -109,8 +124,13 @@ After reviewing the class skeletons, three issues were identified and fixed:
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+The scheduler considers two hard constraints and one ordering constraint:
+
+1. **Time budget (hard)** — no task is included unless its `duration_minutes` fits within the remaining available time. This is the most consequential constraint: a pet owner's day is finite, so every minute over budget is a real cost.
+2. **Completion status (hard)** — tasks already marked `completed=True` are filtered out before scheduling runs. This prevents double-scheduling finished work without requiring deletion.
+3. **Priority (ordering)** — high-priority tasks are evaluated first (`PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}`). If two tasks would both fit, the higher-priority one is guaranteed a spot first.
+
+Priority was chosen as the primary ordering signal because pet owners distinguish urgency (medication vs. enrichment) even when both tasks technically fit. Time is the binding gate — priority only determines who goes through the gate first.
 
 **b. Tradeoffs**
 
@@ -122,13 +142,19 @@ The conflict detector checks for exact `HH:MM` string matches only. Two tasks sc
 
 **a. How you used AI**
 
-- How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
-- What kinds of prompts or questions were most helpful?
+AI (Claude Code / VS Code Copilot) played three distinct roles across phases:
+
+- **Design brainstorming (Phase 1):** Used AI to convert UML descriptions into Python class stubs, then reviewed each stub against the original design intent before accepting it. Prompts like "generate a Python dataclass for Task with these attributes" were fast, but the class relationships required manual review.
+- **Algorithm generation (Phase 3):** Asked for a lambda-based sort for HH:MM strings and for `timedelta` date arithmetic. The most effective prompts were narrow and specific — "using Python's `sorted()` with a lambda key, sort these Task objects by `time` in HH:MM format" produced usable code immediately, whereas vague prompts like "help me sort tasks" produced generic examples that needed adaptation.
+- **Refactoring and test generation (Phase 3–4):** Used AI to propose test cases for edge conditions (untimed tasks sorting last, `as-needed` returning `None`) and to suggest the `st.expander` pattern for collapsible schedule notes in Streamlit.
+
+The most valuable Copilot feature was inline chat with `#file:pawpal_system.py` for context — it meant suggestions were grounded in the actual class signatures rather than generic Python patterns.
 
 **b. Judgment and verification**
 
-- Describe one moment where you did not accept an AI suggestion as-is.
-- How did you evaluate or verify what the AI suggested?
+When implementing recurring tasks, Copilot's initial suggestion mutated the original task in place — it overwrote `due_date` with the next date and returned `self`. This was rejected immediately because a completed task must preserve its original `due_date` as a historical record; overwriting it would make it impossible to know when the task was actually due. The fix was to construct and return a brand-new `Task` instance with `completed=False` and the advanced `due_date`, leaving the original task unchanged.
+
+Verification: after implementing the correct approach, a unit test (`test_mark_complete_daily_returns_next_task`) confirmed that the original task's `due_date` remained `"2026-03-30"` while the returned task's `due_date` was `"2026-03-31"`. The test would have caught the mutation bug immediately.
 
 ---
 
@@ -136,13 +162,33 @@ The conflict detector checks for exact `HH:MM` string matches only. Two tasks sc
 
 **a. What you tested**
 
-- What behaviors did you test?
-- Why were these tests important?
+12 unit tests cover:
+
+| Behavior | Why it matters |
+|---|---|
+| `mark_complete()` sets `completed=True` | Core state change — everything downstream depends on this |
+| `add_task()` increases `pet.tasks` count | Verifies tasks are actually stored |
+| `add_task()` stamps `pet_name` on the task | Required for filtering and conflict display |
+| Daily task returns next occurrence +1 day | Recurrence math must be exact |
+| Weekly task returns next occurrence +7 days | Same — date arithmetic must not drift |
+| As-needed task returns `None` | No ghost tasks for one-off events |
+| `sort_by_time()` orders HH:MM ascending | Time-sorted view requires correct ordering |
+| Untimed tasks sort after all timed tasks | Default sentinel `"99:99"` must push them last |
+| `filter_tasks(pet_name=...)` returns only that pet | Filter correctness for multi-pet owners |
+| `filter_tasks(completed=True/False)` splits correctly | Pending/done split drives the mark-complete UI |
+| `detect_conflicts()` finds same-time clash | Core safety feature must not silently miss conflicts |
+| `detect_conflicts()` returns `[]` on clean data | Must not produce false positives |
+
+These tests were important because the features interact: filtering feeds the mark-complete UI, which calls `mark_complete()`, which returns a new task that must have its `pet_name` set correctly for `add_task()` to stamp it. Testing each step independently made the integration behavior predictable.
 
 **b. Confidence**
 
-- How confident are you that your scheduler works correctly?
-- What edge cases would you test next if you had more time?
+High confidence for covered behaviors. Known gaps to test next:
+
+- `generate_schedule()` with a time budget of 0 (should schedule nothing)
+- Tasks where all priorities are equal (ordering should be stable)
+- `detect_conflicts()` with three tasks at the same time (only one pair should be reported per time slot in the current implementation)
+- Recurring task where `due_date` is empty (falls back to `date.today()` — this path is tested indirectly but not explicitly)
 
 ---
 
@@ -150,12 +196,12 @@ The conflict detector checks for exact `HH:MM` string matches only. Two tasks sc
 
 **a. What went well**
 
-- What part of this project are you most satisfied with?
+The separation between data classes (`Task`, `Pet`, `Owner`) and behavior classes (`Scheduler`, `Schedule`) held up across all four phases without requiring a structural rewrite. New features — sorting, filtering, conflict detection, recurring tasks — were added as new methods on `Scheduler` and new fields on `Task` without touching existing logic. That stability is the strongest signal that the initial design was sound.
 
 **b. What you would improve**
 
-- If you had another iteration, what would you improve or redesign?
+The conflict detector only catches exact `HH:MM` matches. A pet owner with a 30-minute walk at 09:00 and a 20-minute vet prep at 09:15 would see no warning, even though those tasks overlap until 09:30. The improvement would be storing an end time (`start + duration`) on each task and checking for interval intersection instead of string equality. I would also add a `time` field to the Streamlit UI's task form earlier (Phase 2) rather than retrofitting it in Phase 4.
 
 **c. Key takeaway**
 
-- What is one important thing you learned about designing systems or working with AI on this project?
+AI accelerates implementation dramatically, but only the human architect can own the interface contracts. Every time AI suggested a solution — the sort lambda, the timedelta pattern, the Streamlit component layout — it was answering "how do I do X?" The harder questions — "should `mark_complete()` mutate the original or return a copy?", "should conflict detection crash or warn?" — required understanding what the system needed to guarantee, not just what was technically possible. Staying in the role of lead architect meant treating AI output as a draft to evaluate, not a decision to accept.

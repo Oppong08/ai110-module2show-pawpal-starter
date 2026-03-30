@@ -32,6 +32,19 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+## Features
+
+- **Multi-pet support** — manage tasks for any number of pets in one session
+- **Priority-driven scheduling** — high-priority tasks are always evaluated first within the time budget; every include/skip decision comes with a plain-English explanation
+- **Time-sorted task view** — all tasks displayed in chronological order by scheduled start time (`HH:MM`); tasks with no time assigned sort to the end
+- **Conflict detection** — instant `st.warning` banners when two tasks share the exact same time slot, so scheduling problems are visible before generating the plan
+- **Recurring task automation** — daily and weekly tasks auto-generate their next occurrence when marked complete, using Python's `timedelta` for accurate date arithmetic
+- **Completion filtering** — the Mark Complete section shows only pending tasks; the task table marks finished ones with ✓
+
+## 📸 Demo
+
+<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank"><img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' /></a>
+
 ## Smarter Scheduling
 
 Phase 3 adds four algorithmic features that make the scheduler more intelligent:
